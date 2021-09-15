@@ -1,0 +1,56 @@
+version: 2.1
+
+executors:
+  python:
+    docker:
+      - image: python:3.8
+    environment:
+      POETRY_VIRTUALENVS_PATH: /virtualenvs/envs
+      POETRY_CACHE_DIR: /virtualenvs/cache
+
+commands:
+  setup-python-dependencies:
+    description: Setup the python environment for testing and linting
+    steps:
+      - checkout:
+          path: ~/template
+      - restore_cache:
+          keys:
+            - pip-cache-{{ arch }}-{{ .Branch }}
+            - pip-cache
+      - run: echo "export PATH=$PATH:$HOME/.local/bin" >> $BASH_ENV
+      - run: pip install --user poetry cookiecutter
+      - run: cookiecutter ~/template --no-input
+      - run: cd ~/project/new_project && poetry lock
+      - restore_cache:
+          keys:
+            - poetry-cache-{{ arch }}-{{ .Branch }}-{{ checksum "new_project/poetry.lock" }}
+            - poetry-cache-{{ arch }}-{{ .Branch }}
+            - poetry-cache
+      - run: cd ~/project/new_project && poetry install
+      - save_cache:
+          key: poetry-cache-{{ arch }}-{{ .Branch }}-{{ checksum "new_project/poetry.lock" }}
+          paths: /virtualenvs
+      - save_cache:
+          key: pip-cache-{{ arch }}-{{ .Branch }}
+          paths: ~/.local
+              
+jobs:
+  lint:
+    executor: python
+    steps:
+      - setup-python-dependencies
+      - run: cd ~/project/new_project && poetry run pylint new_project
+      - run: cd ~/project/new_project && poetry run mypy new_project
+  test:
+    executor: python
+    steps:
+      - setup-python-dependencies
+      - run: cd ~/project/new_project && poetry run pytest
+
+workflows:
+  commit:
+    jobs:
+      # lint and test
+      - lint
+      - test

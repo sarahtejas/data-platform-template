@@ -1,0 +1,107 @@
+version: 2.1
+
+references:
+  project: &project   {{cookiecutter.project_slug}}
+  dir:     &dir     ~/{{cookiecutter.project_slug}}
+  ccc-job: &ccc-job
+
+
+executors:
+  ccc:
+    working_directory: *dir
+    docker:
+      - image: circleci/command-convenience:0.1
+        auth:
+          username: $DOCKER_HUB_USER
+          password: $DOCKER_HUB_PASSWORD
+        environment:
+          NAME: *project
+          DOCKER_REGISTRY: ecr
+          NAMESPACE: data
+          TWISTLOCK_ENFORCE: true
+          DOCKERFILE_PATH: "./Dockerfile"
+          DEPLOY_CONTAINER_NAME: "183081753049.dkr.ecr.us-east-1.amazonaws.com/circleci/{{cookiecutter.project_slug}}"
+  python:
+    docker:
+      - image: python:{{cookiecutter.python_version}}
+    environment:
+      POETRY_VIRTUALENVS_PATH: /virtualenvs/envs
+      POETRY_CACHE_DIR: /virtualenvs/cache
+
+commands:
+  setup-python-dependencies:
+    description: Setup the python environment for testing and linting
+    steps:
+      - checkout
+      - restore_cache:
+          keys:
+            - poetry-cache-{{ '{{ arch }}' }}-{{ '{{ .Branch }}' }}-{{ '{{ checksum "poetry.lock" }}' }}
+            - poetry-cache-{{ '{{ arch }}' }}-{{ '{{ .Branch }}' }}
+            - poetry-cache
+      - restore_cache:
+          keys:
+            - pip-cache-{{ '{{ arch }}' }}-{{ '{{ .Branch }}' }}
+            - pip-cache
+      - run: echo "export PATH=$PATH:$HOME/.local/bin" >> $BASH_ENV
+      - run: pip install --user poetry
+      - run: poetry install --no-root
+      - save_cache:
+          key: poetry-cache-{{ '{{ arch }}' }}-{{ '{{ .Branch }}' }}-{{ '{{ checksum "poetry.lock" }}' }}
+          paths: /virtualenvs
+      - save_cache:
+          key: pip-cache-{{ '{{ arch }}' }}-{{ '{{ .Branch }}' }}
+          paths: ~/.local
+  publish:
+    description: Run cci publish to building and push the docker container.
+    steps:
+      - checkout
+      - setup_remote_docker
+      - run: publish
+      - store_artifacts:
+          path: ccc-image-scan-results
+    
+jobs:
+  lint:
+    executor: python
+    steps:
+      - setup-python-dependencies
+      - run: poetry run pylint {{cookiecutter.project_slug}}
+      - run: poetry run mypy {{cookiecutter.project_slug}}
+  test:
+    executor: python
+    steps:
+      - setup-python-dependencies
+      - run: poetry run pytest
+  publish-branch:
+    executor: ccc
+    steps:
+      - publish
+  publish-latest:
+    executor: ccc
+    steps:
+      - publish
+    environment:
+      CONTAINER_VERSION: latest
+
+workflows:
+  commit:
+    jobs:
+      # lint and test
+      - lint
+      - test
+      # staging and dev deploy
+      - publish-branch:
+          context: org-global
+          requires:
+            - lint
+            - test
+      # prod deploy
+      - publish-latest:
+          context: org-global
+          filters:
+            branches:
+              only:
+                - master
+          requires:
+            - lint
+            - test

@@ -1,0 +1,3 @@
+#
+# Data Platform team is responsible for this template
+@circleci/{{cookiecutter.owning_github_team}}

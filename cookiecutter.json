@@ -1,0 +1,11 @@
+{
+    "full_name": "Data Platform Team",
+    "email": "data-platform@circleci.com",
+    "owning_github_team": "data-platform",
+    "project_name": "New Project",
+    "project_slug": "{{cookiecutter.project_name.lower().replace(' ', '_').replace('-', '_')}}",
+    "project_executable": "{{cookiecutter.project_slug.replace('_', '-')}}",
+    "description": "New Project",
+    "version": "0.0.1",
+    "python_version": "3.9"
+}
